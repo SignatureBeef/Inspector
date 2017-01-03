@@ -116,7 +116,7 @@ namespace Inspector
 				results = results.Take(maxResults.Value);
 			}
 
-			var singleType = results.SingleOrDefault(r => r.Name.Equals(term, comparisonType));
+			var singleType = results.SingleOrDefault(r => (r.DeclaringType.FullName + "." + r.Name).Equals(term, comparisonType));
 			if (singleType != null)
 			{
 				return new[] { singleType };
