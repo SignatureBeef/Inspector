@@ -274,7 +274,7 @@ namespace Inspector.Commands
 			var methodInfo = member as MethodInfo;
 
 			object v = null;
-			string objType;
+			string objType = null;
 
 			if (fieldInfo != null)
 			{
@@ -288,13 +288,55 @@ namespace Inspector.Commands
 					}
 					else
 					{
-						args.Player.SendErrorMessage($"Unsupported type {fieldInfo.FieldType.FullName} for field {type}.{fieldInfo.Name}");
-						return;
+						var instanceMethods = fieldInfo.FieldType.GetMethods().Where(x => !x.IsStatic && x.Name == (args.Parameters[2]));
+						if (instanceMethods.Count() == 1)
+						{
+							var instanceMethod = instanceMethods.Single();
+							object[] parameters;
+							if (!InspectorHelpers.TryGetMethodParameters(instanceMethod, args, out parameters, 3))
+								return;
+
+							object instance = fieldInfo.GetValue(null);
+							v = instanceMethod.Invoke(instance, parameters);
+							objType = "Method";
+						}
+						else if (instanceMethods.Count() > 1)
+						{
+							args.Player.SendErrorMessage("Too many instance methods matching: " + args.Parameters[2]);
+							args.Player.SendErrorMessage($"First {instanceMethods.Count()}");
+							foreach (var item in instanceMethods)
+							{
+								var name = item.Name;
+								if (item.DeclaringType != null)
+								{
+									name = item.DeclaringType.FullName + "." + name;
+								}
+
+								var parameters = item.GetParameters();
+								if (parameters != null && parameters.Length > 0)
+								{
+									var parameterNames = String.Join(",", parameters
+										.Select(x => x.ParameterType.Name + " " + x.Name)
+									);
+									name = $"{name}({parameterNames})";
+								}
+
+								args.Player.SendErrorMessage(name);
+							}
+						}
+						else
+						{
+							args.Player.SendErrorMessage($"Unsupported type {fieldInfo.FieldType.FullName} for field {type}.{fieldInfo.Name}");
+							return;
+						}
 					}
 				}
 
-				v = fieldInfo.GetValue(null);
-				objType = "Field";
+				if (objType == null)
+				{
+					v = fieldInfo.GetValue(null);
+					objType = "Field";
+				}
 			}
 			else if (propertyInfo != null)
 			{
@@ -310,8 +352,55 @@ namespace Inspector.Commands
 						}
 						else
 						{
-							args.Player.SendErrorMessage($"Unsupported type {propertyInfo.PropertyType.FullName} for property {type}.{propertyInfo.Name}");
-							return;
+							var instanceMethods = propertyInfo.PropertyType.GetMethods().Where(x => !x.IsStatic && x.Name == (args.Parameters[2]));
+							if (instanceMethods.Count() == 1)
+							{
+								var instanceMethod = instanceMethods.Single();
+								object[] parameters;
+								if (!InspectorHelpers.TryGetMethodParameters(instanceMethod, args, out parameters, 3))
+									return;
+
+								if (propertyInfo.GetMethod != null)
+								{
+									object instance = propertyInfo.GetMethod.Invoke(null, null);
+									v = instanceMethod.Invoke(instance, parameters);
+									objType = "Method";
+								}
+								else
+								{
+									args.Player.SendErrorMessage($"{type.FullName}.{propertyInfo.Name} does not have a getter");
+									return;
+								}
+							}
+							else if (instanceMethods.Count() > 1)
+							{
+								args.Player.SendErrorMessage("Too many instance methods matching: " + args.Parameters[2]);
+								args.Player.SendErrorMessage($"First {instanceMethods.Count()}");
+								foreach (var item in instanceMethods)
+								{
+									var name = item.Name;
+									if (item.DeclaringType != null)
+									{
+										name = item.DeclaringType.FullName + "." + name;
+									}
+
+									var parameters = item.GetParameters();
+									if (parameters != null && parameters.Length > 0)
+									{
+										var parameterNames = String.Join(",", parameters
+											.Select(x => x.ParameterType.Name + " " + x.Name)
+										);
+										name = $"{name}({parameterNames})";
+									}
+
+									args.Player.SendErrorMessage(name);
+								}
+							}
+							else
+							{
+								args.Player.SendErrorMessage($"Unsupported type {propertyInfo.PropertyType.FullName} for property {type}.{propertyInfo.Name}");
+								return;
+							}
 						}
 					}
 					else
@@ -321,16 +410,19 @@ namespace Inspector.Commands
 					}
 				}
 
-				if (propertyInfo.GetMethod != null)
+				if (objType == null)
 				{
-					v = propertyInfo.GetMethod.Invoke(null, null);
+					if (propertyInfo.GetMethod != null)
+					{
+						v = propertyInfo.GetMethod.Invoke(null, null);
+					}
+					else
+					{
+						args.Player.SendErrorMessage($"{type.FullName}.{propertyInfo.Name} does not have a getter");
+						return;
+					}
+					objType = "Property";
 				}
-				else
-				{
-					args.Player.SendErrorMessage($"{type.FullName}.{propertyInfo.Name} does not have a getter");
-					return;
-				}
-				objType = "Property";
 			}
 			else if (methodInfo != null)
 			{
